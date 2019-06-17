@@ -1,3 +1,4 @@
+#include <Arduino.h>
 
 // group 1 button/led pins
 byte grp1OneShortPin = 1; // one short espresso
