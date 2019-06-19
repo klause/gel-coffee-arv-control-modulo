@@ -1,27 +1,36 @@
 #include <Arduino.h>
+#include <JC_Button.h>          // https://github.com/JChristensen/JC_Button
 
-// group 1 button/led pins
+// groupNumber 1 button/led pins
 byte grp1OneShortPin = 1; // one short espresso
 byte grp1OneLongPin = 2; // one long espresso
 byte grp1TwoShortPin = 3; // tow short espressos
 byte grp1TwoLongPin = 4; // tow long espressos
 byte grp1ContinuosPin = 5; // continuos brewing
 
-// group 2 button/led pins
+// groupNumber 2 button/led pins
 byte grp2OneShortPin = 6; // one short espresso
 byte grp2OneLongPin = 7; // one long espresso
 byte grp2TwoShortPin = 8; // tow short espressos
 byte grp2TwoLongPin = 9; // tow long espressos
 byte grp2ContinuosPin = 10; // continuos brewing
 
-byte buttonPins[10] = {1,2,3,4,5,6,7,8,9,10};
+const byte
+  RELAY_GROUP1_PIN(11),
+  RELAY_GROUP2_PIN(12);
+
+ToggleButtonLed buttons[10];
+// byte buttonPins[10] = {1,2,3,4,5,6,7,8,9,10};
 bool buttonEnabledArray[10] = {0,0,0,0,0,0,0,0,0,0};
-bool buttonLastValArray[10] = {HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH};
+bool buttonLastStateArray[10] = {HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH};
+
+byte buttonGrp1Down = -1;                     //!< which button is pressed down on groupNumber 1
+byte buttonGrp2Down = -1;                     //!< which button is pressed down on groupNumber 2
 
 bool buttonEnabled;
 
-byte grp1EnabledButton = -1;
-byte grp2EnabledButton = -1;
+byte pinOfActiveOptionOnGroup1 = -1;
+byte pinOfActiveOptionOnGroup2 = -1;
 
 long lastPressedTime = -1;
 
@@ -30,79 +39,67 @@ void setup() {
   Serial.begin(38400);
   Serial.println("Initializing coffee machine...");
 
-  pinMode(grp1OneShortPin, INPUT_PULLUP);
-  pinMode(grp1OneLongPin, INPUT_PULLUP);
-  pinMode(grp1TwoShortPin, INPUT_PULLUP);
-  pinMode(grp1TwoLongPin, INPUT_PULLUP);
-  pinMode(grp1ContinuosPin, INPUT_PULLUP);
+  for (size_t pin = 1; pin <= 10; pin++) {
+    buttons[pin-1] = ToggleButtonLed(pin);
+  }
 
-  pinMode(grp2OneShortPin, INPUT_PULLUP);
-  pinMode(grp2OneLongPin, INPUT_PULLUP);
-  pinMode(grp2TwoShortPin, INPUT_PULLUP);
-  pinMode(grp2TwoLongPin, INPUT_PULLUP);
-  pinMode(grp2ContinuosPin, INPUT_PULLUP);
+  // pinMode(grp1OneShortPin, INPUT_PULLUP);
+  // pinMode(grp1OneLongPin, INPUT_PULLUP);
+  // pinMode(grp1TwoShortPin, INPUT_PULLUP);
+  // pinMode(grp1TwoLongPin, INPUT_PULLUP);
+  // pinMode(grp1ContinuosPin, INPUT_PULLUP);
+
+  // pinMode(grp2OneShortPin, INPUT_PULLUP);
+  // pinMode(grp2OneLongPin, INPUT_PULLUP);
+  // pinMode(grp2TwoShortPin, INPUT_PULLUP);
+  // pinMode(grp2TwoLongPin, INPUT_PULLUP);
+  // pinMode(grp2ContinuosPin, INPUT_PULLUP);
 
   Serial.println("Initialization complete. ");
 }
 
 void loop() {
 
-  for (byte i = 1; i < 10; i++) {
-
-    // check if button is pressed
-    bool currentButtonVal = checkButton(i);
-
-  }
-
-//  turnOnLed(grp1EnabledButton, currentButtonVal);
-//  turnOnLed(grp2EnabledButton, currentButtonVal);
-
-}
-
-bool checkButton(byte buttonPin) {
-
-  bool buttonEnabled = buttonEnabledArray[buttonPin-1];
-
-  if (buttonEnabled) {
-    pinMode(buttonPin, INPUT_PULLUP);
-  }
-
-  bool buttonVal = digitalRead(buttonPin);
-
-  if (buttonVal == LOW && buttonLastValArray[buttonPin-1] == HIGH && (millis() - lastPressedTime) > 500) {
-    lastPressedTime = millis();
-    Serial.println("Button " + buttonPin + " pressed");
-    buttonEnabledArray[buttonPin-1] = !buttonEnabled;
-    if (buttonPin <= 5) {
-      grp1EnabledButton = !buttonEnabled ? buttonPin : -1;
-      commandGroup(1, buttonEnabled, buttonPin);
-    } else {
-      grp2EnabledButton = !buttonEnabled ? buttonPin : -1;
+  // for each button check wheter it was toggle
+  for (byte i = 0; i < 10; i++) {
+    ToggleButton btn = buttons[i];
+    btn.read();
+    if (btn.changed()){
+      handleButtonToggle(i+1, btn);
     }
   }
 
-  buttonLastValArray[buttonPin-1] = buttonVal;
-  return buttonVal;
-}
-
-void turnOnLed(byte buttonPin, bool currentButtonVal) {
-
-  bool buttonEnabled = buttonEnabledArray[buttonPin-1];
-
-  // turn LED on if button is active and button is released
-  if (buttonEnabled && currentButtonVal == HIGH) {
-    digitalWrite(buttonPin, LOW);
-    pinMode(buttonPin, OUTPUT);
+  if (pinOfActiveOptionOnGroup1 > 0) {
+    turnOnLed(pinOfActiveOptionOnGroup1);
+  }
+  if (pinOfActiveOptionOnGroup2 > 0) {
+    turnOnLed(pinOfActiveOptionOnGroup2);
   }
 
 }
 
-void commandGroup(byte group, bool enable, byte buttonPin) {
+void commandGroup(byte groupNumber, bool toggleState) {
 
-      if (enable) {
-        Serial.println("Start brewing on group " + group);
-      } else {
-        Serial.println("Stop brewing on group " + group);
-      }
+  byte groupPin = groupNumber == 1 ? RELAY_GROUP1_PIN : RELAY_GROUP2_PIN;
+
+  if (toggleState) {
+    Serial.println("Start brewing on groupNumber " + groupNumber);
+    digitalWrite(groupPin, HIGH);
+  } else {
+    Serial.println("Stop brewing on groupNumber " + groupNumber);
+    digitalWrite(groupPin, LOW);
+  }
+
+}
+
+void handleButtonToggle(byte buttonPin, ToggleButton btn) {
+
+    if (buttonPin <= 5) {
+      pinOfActiveOptionOnGroup1 = !buttonEnabled ? buttonPin : -1;
+      commandGroup(1, btn.toggleState());
+    } else {
+      pinOfActiveOptionOnGroup2 = !buttonEnabled ? buttonPin : -1;
+      commandGroup(2, btn.toggleState());
+    }
 
 }
