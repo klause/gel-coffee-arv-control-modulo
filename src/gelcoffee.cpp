@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <JC_Button.h>          // https://github.com/JChristensen/JC_Button
+#include <EEPROM.h>
+
+#include <ExpressoCoffee.h>          // https://github.com/JChristensen/JC_Button
 
 // groupNumber 1 button/led pins
 byte grp1OneShortPin = 1; // one short espresso
@@ -15,11 +18,19 @@ byte grp2TwoShortPin = 8; // tow short espressos
 byte grp2TwoLongPin = 9; // tow long espressos
 byte grp2ContinuosPin = 10; // continuos brewing
 
-const byte
-  RELAY_GROUP1_PIN(11),
-  RELAY_GROUP2_PIN(12);
+byte
+  FLOWMETER_GROUP1_PIN(2),
+  FLOWMETER_GROUP2_PIN(3),
+  SOLENOID_BOILER_PIN(12),
+  PUMP_PIN(13),
+  SOLENOID_GROUP1_PIN(A0),
+  SOLENOID_GROUP2_PIN(A1),
+  WATER_LEVEL_PIN(A2);
 
-ToggleButtonLed buttons[10];
+byte GROUP1_PINS[5] {0, 1, 4,  5,  6};
+byte GROUP2_PINS[5] {7, 8, 9, 10, 11};
+
+Button buttons[10];
 // byte buttonPins[10] = {1,2,3,4,5,6,7,8,9,10};
 bool buttonEnabledArray[10] = {0,0,0,0,0,0,0,0,0,0};
 bool buttonLastStateArray[10] = {HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH};
@@ -34,42 +45,37 @@ byte pinOfActiveOptionOnGroup2 = -1;
 
 long lastPressedTime = -1;
 
+BrewGroup brewGroup1;
+BrewGroup brewGroup2;
+
 void setup() {
   // Initialize a serial connection for reporting values to the host
   Serial.begin(38400);
   Serial.println("Initializing coffee machine...");
 
   for (size_t pin = 1; pin <= 10; pin++) {
-    buttons[pin-1] = ToggleButtonLed(pin);
+    buttons[pin-1] = Button(pin);
   }
 
-  // pinMode(grp1OneShortPin, INPUT_PULLUP);
-  // pinMode(grp1OneLongPin, INPUT_PULLUP);
-  // pinMode(grp1TwoShortPin, INPUT_PULLUP);
-  // pinMode(grp1TwoLongPin, INPUT_PULLUP);
-  // pinMode(grp1ContinuosPin, INPUT_PULLUP);
+  DosageRecord group1DosageRecord;
+  DosageRecord group2DosageRecord;
 
-  // pinMode(grp2OneShortPin, INPUT_PULLUP);
-  // pinMode(grp2OneLongPin, INPUT_PULLUP);
-  // pinMode(grp2TwoShortPin, INPUT_PULLUP);
-  // pinMode(grp2TwoLongPin, INPUT_PULLUP);
-  // pinMode(grp2ContinuosPin, INPUT_PULLUP);
+  EEPROM.get(0, group1DosageRecord);
+  EEPROM.get(sizeof(DosageRecord), group2DosageRecord);
+
+  brewGroup1 = BrewGroup(1, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN, PUMP_PIN);
+  brewGroup2 = BrewGroup(2, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN, PUMP_PIN);
 
   Serial.println("Initialization complete. ");
 }
 
 void loop() {
 
-  // for each button check wheter it was toggle
-  for (byte i = 0; i < 10; i++) {
-    ToggleButton btn = buttons[i];
-    btn.read();
-    if (btn.changed()){
-      handleButtonToggle(i+1, btn);
-    }
-  }
+  brewGroup1.check();
+  brewGroup2.check();
 
-  if (pinOfActiveOptionOnGroup1 > 0) {
+
+  if (brewGroup1.currentOptionBrewing() > 0) {
     turnOnLed(pinOfActiveOptionOnGroup1);
   }
   if (pinOfActiveOptionOnGroup2 > 0) {
@@ -92,7 +98,7 @@ void commandGroup(byte groupNumber, bool toggleState) {
 
 }
 
-void handleButtonToggle(byte buttonPin, ToggleButton btn) {
+void handleButtonToggle(byte buttonPin, Button btn) {
 
     if (buttonPin <= 5) {
       pinOfActiveOptionOnGroup1 = !buttonEnabled ? buttonPin : -1;
