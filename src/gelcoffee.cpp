@@ -1,111 +1,103 @@
 #include <Arduino.h>
-#include <JC_Button.h>          // https://github.com/JChristensen/JC_Button
-#include <EEPROM.h>
+#include <EEPromUtils.h>
+#include <ExpressoCoffee.h>
 
-#include <ExpressoCoffee.h>          // https://github.com/JChristensen/JC_Button
+// #define DEBUG_LEVEL 3
+#include <Debug.h>
 
-// groupNumber 1 button/led pins
-byte grp1OneShortPin = 1; // one short espresso
-byte grp1OneLongPin = 2; // one long espresso
-byte grp1TwoShortPin = 3; // tow short espressos
-byte grp1TwoLongPin = 4; // tow long espressos
-byte grp1ContinuosPin = 5; // continuos brewing
+int8_t
+    FLOWMETER_GROUP1_PIN(2), //!< INT0
+    FLOWMETER_GROUP2_PIN(3), //!< INT1
+    SOLENOID_GROUP1_PIN(A0),
+    SOLENOID_GROUP2_PIN(A1);
 
-// groupNumber 2 button/led pins
-byte grp2OneShortPin = 6; // one short espresso
-byte grp2OneLongPin = 7; // one long espresso
-byte grp2TwoShortPin = 8; // tow short espressos
-byte grp2TwoLongPin = 9; // tow long espressos
-byte grp2ContinuosPin = 10; // continuos brewing
+int8_t GROUP1_PINS[GROUP_PINS_LEN] { 0, 4, 5, 6, 7 }; //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
+int8_t GROUP2_PINS[GROUP_PINS_LEN] { 8, 9, 10, 11, 12 }; //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
 
-byte
-  FLOWMETER_GROUP1_PIN(2),
-  FLOWMETER_GROUP2_PIN(3),
-  SOLENOID_BOILER_PIN(12),
-  PUMP_PIN(13),
-  SOLENOID_GROUP1_PIN(A0),
-  SOLENOID_GROUP2_PIN(A1),
-  WATER_LEVEL_PIN(A2);
+ExpressoMachine* expressoMachine;
 
-byte GROUP1_PINS[5] {0, 1, 4,  5,  6};
-byte GROUP2_PINS[5] {7, 8, 9, 10, 11};
+void setup()
+{
+	// Initialize a serial connection for reporting values to the host
+    #ifdef DEBUG_LEVEL
+    Serial.begin(9600);
+    while (!Serial);
+    #endif
+    
+    delay(5 * 1000);
 
-Button buttons[10];
-// byte buttonPins[10] = {1,2,3,4,5,6,7,8,9,10};
-bool buttonEnabledArray[10] = {0,0,0,0,0,0,0,0,0,0};
-bool buttonLastStateArray[10] = {HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH,HIGH};
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN("");
+    DEBUG2_PRINTLN(".");
+    DEBUG2_PRINTLN("Initializing coffee machine module v1.0");
 
-byte buttonGrp1Down = -1;                     //!< which button is pressed down on groupNumber 1
-byte buttonGrp2Down = -1;                     //!< which button is pressed down on groupNumber 2
+    DosageRecord groupDosageRecords[BREW_GROUPS_LEN] = { DosageRecord(), DosageRecord() };
 
-bool buttonEnabled;
+    size_t location = 0;
+    int8_t ret;
+    if (EEPROM_init()) {
+        DEBUG3_PRINTLN("Loading dosage config from EEPROM");
+        for (int8_t i = 0; i < BREW_GROUPS_LEN; i++) {
+            
+            size_t dataLen = sizeof(DosageRecord);
+            size_t location = EEPROM_SIZE( dataLen ) * (i);
 
-byte pinOfActiveOptionOnGroup1 = -1;
-byte pinOfActiveOptionOnGroup2 = -1;
+            ret = EEPROM_safe_read(location, (uint8_t*) &groupDosageRecords[i], sizeof(dataLen));
 
-long lastPressedTime = -1;
-
-BrewGroup brewGroup1;
-BrewGroup brewGroup2;
-
-void setup() {
-  // Initialize a serial connection for reporting values to the host
-  Serial.begin(38400);
-  Serial.println("Initializing coffee machine...");
-
-  for (size_t pin = 1; pin <= 10; pin++) {
-    buttons[pin-1] = Button(pin);
-  }
-
-  DosageRecord group1DosageRecord;
-  DosageRecord group2DosageRecord;
-
-  EEPROM.get(0, group1DosageRecord);
-  EEPROM.get(sizeof(DosageRecord), group2DosageRecord);
-
-  brewGroup1 = BrewGroup(1, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN, PUMP_PIN);
-  brewGroup2 = BrewGroup(2, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN, PUMP_PIN);
-
-  Serial.println("Initialization complete. ");
-}
-
-void loop() {
-
-  brewGroup1.check();
-  brewGroup2.check();
-
-
-  if (brewGroup1.currentOptionBrewing() > 0) {
-    turnOnLed(pinOfActiveOptionOnGroup1);
-  }
-  if (pinOfActiveOptionOnGroup2 > 0) {
-    turnOnLed(pinOfActiveOptionOnGroup2);
-  }
-
-}
-
-void commandGroup(byte groupNumber, bool toggleState) {
-
-  byte groupPin = groupNumber == 1 ? RELAY_GROUP1_PIN : RELAY_GROUP2_PIN;
-
-  if (toggleState) {
-    Serial.println("Start brewing on groupNumber " + groupNumber);
-    digitalWrite(groupPin, HIGH);
-  } else {
-    Serial.println("Stop brewing on groupNumber " + groupNumber);
-    digitalWrite(groupPin, LOW);
-  }
-
-}
-
-void handleButtonToggle(byte buttonPin, Button btn) {
-
-    if (buttonPin <= 5) {
-      pinOfActiveOptionOnGroup1 = !buttonEnabled ? buttonPin : -1;
-      commandGroup(1, btn.toggleState());
-    } else {
-      pinOfActiveOptionOnGroup2 = !buttonEnabled ? buttonPin : -1;
-      commandGroup(2, btn.toggleState());
+            #if DEBUG_LEVEL >= DEBUG_ERROR
+                if (ret) {
+                    DEBUG1_VALUE("Error reading dosage record for group ", i+1);
+                    DEBUG1_VALUE(" at location: ", location);
+                    DEBUG1_VALUELN(". EEPROM_safe_write returned: ", ret);
+                }
+            #endif
+        }
     }
 
+    if (location <= 0) {
+        for (int8_t i = 0; i < BREW_GROUPS_LEN; i++) {
+            groupDosageRecords[i] = DosageRecord();
+        }
+    }
+
+    #if DEBUG_LEVEL >= 3
+        for (int8_t i = 0; i < BREW_GROUPS_LEN; i++) {
+            groupDosageRecords[i] = DosageRecord();
+            Serial.print(F("Dosage config for group "));
+            Serial.println(i);
+            Serial.print(F("  flowMeterPulseArray = [ "));
+            Serial.print(groupDosageRecords[i].flowMeterPulseArray[0]);
+            Serial.print(F(", "));
+            Serial.print(groupDosageRecords[i].flowMeterPulseArray[1]);
+            Serial.print(F(", "));
+            Serial.print(groupDosageRecords[i].flowMeterPulseArray[2]);
+            Serial.print(F(", "));
+            Serial.print(groupDosageRecords[i].flowMeterPulseArray[3]);
+            Serial.println(F(" ]"));
+        }
+    #endif
+
+    BrewGroup* groups = new BrewGroup[BREW_GROUPS_LEN] { BrewGroup(1, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN, groupDosageRecords[0]),
+    		   BrewGroup(2, GROUP2_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP2_PIN, groupDosageRecords[1]) };
+
+    // DEBUG3_HEXVALLN("setup() 1 - group 1, address: ", groups[0]);
+    // DEBUG3_HEXVALLN("setup() 1 - group 2, address: ", groups[1]);
+
+    ExpressoMachine::init(groups, BREW_GROUPS_LEN);
+
+    expressoMachine = ExpressoMachine::getInstance();
+    expressoMachine->begin();
+
+    DEBUG2_PRINTLN("Initialization complete.");
+}
+
+void loop()
+{
+
+    ExpressoMachine::getInstance()->check();
 }
