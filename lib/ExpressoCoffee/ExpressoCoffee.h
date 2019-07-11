@@ -81,14 +81,11 @@ class BrewOption {
             : m_pin(pin),  m_doseFlowmeterCount(doseFlowmeterCount), m_doseDuration(doseDuration), m_parentBrewGroup(parentBrewGroup) {
                 m_btn = new Button(pin);
                 DEBUG3_VALUELN("BrewOption constructor, pin=", m_pin);
-                // DEBUG3_HEXVAL(";address: ", this);
-                // DEBUG3_HEXVALLN(", parentBrewGroup=", m_parentBrewGroup);
             };
         ButtonAction loop();
         int8_t getLedPin() { return m_pin; };
-        void begin() {
+        void setup() {
             DEBUG3_VALUELN("begin() on brew option of pin ", m_pin);
-            // DEBUG3_HEXVALLN("; address: ", this);
             m_btn->begin();
             m_pinMode = INPUT_PULLUP;
         };
@@ -153,7 +150,7 @@ class BrewGroup {
         unsigned long m_previousLedsBlinkMillis = 0;
         bool m_programmingMode = false;
         ExpressoMachine* m_expressoMachine = NULL;
-        bool m_begin = false;
+        bool m_flagSetup = false;
         bool m_ledsBlinkToggle;
 
         SimpleFlowMeter* m_flowMeter = NULL;
@@ -167,7 +164,6 @@ class BrewGroup {
         void enterProgrammingMode();
         void exitProgrammingMode();
         void setStatusLeds(LedStatus s, FilterOption filter);
-        // void setAllInputPullup();
 };
 
 class ExpressoMachine {
@@ -187,7 +183,7 @@ class ExpressoMachine {
         BrewGroup* getBrewGroup(int8_t groupNumber);
         BrewGroup* getBrewGroups() { return m_brewGroups; };
 
-        void begin();
+        void setup();
 
         void turnOffPump(BrewGroup* brewGroupAsking);
 
@@ -196,7 +192,7 @@ class ExpressoMachine {
 
         void turnOnPump();
 
-        void check();
+        void loop();
 
         bool isProgramming();
 
@@ -218,7 +214,7 @@ class ExpressoMachine {
         void turnOffPump();
         bool isBoilerWaterLevelLow();
         bool isFillingBoiler();
-        bool m_begin = false;
+        bool m_flagSetup = false;
 };
 
 #endif

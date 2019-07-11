@@ -137,7 +137,7 @@ ButtonAction BrewOption::loop()
 
 
 void BrewGroup::command(BrewOption* brewOption) {
-    if (!m_ptrCurrentBrewingOption && brewOption != NULL) {
+    if (m_ptrCurrentBrewingOption == NULL && brewOption != NULL) {
         // start brewing
         DEBUG3_VALUELN("Start brewing on group ", m_groupNumber);
         m_ptrCurrentBrewingOption = brewOption;
@@ -149,7 +149,7 @@ void BrewGroup::command(BrewOption* brewOption) {
         m_expressoMachine->turnOffBoilerSolenoid();
         turnOnGroupSolenoid();
         m_expressoMachine->turnOnPump();
-    } else if (m_ptrCurrentBrewingOption == brewOption) {
+    } else if (m_ptrCurrentBrewingOption == brewOption || m_ptrCurrentBrewingOption == NULL) {
         // stop brewing
         DEBUG3_VALUE("Stop brewing on group ", m_groupNumber);
         DEBUG3_VALUELN(". Brew time: ", ((millis() - m_brewingStartTime) / 1000));
@@ -193,7 +193,7 @@ void meterISRGroup2() {
 
 void BrewGroup::setup(){
 
-    DEBUG3_VALUELN("begin() on group ", m_groupNumber);
+    DEBUG3_VALUELN("setup() on group ", m_groupNumber);
 
     DosageRecord dosageConfig = loadDosageRecord();
 
@@ -220,10 +220,10 @@ void BrewGroup::setup(){
 
     for (int8_t i = 0; i < GROUP_PINS_LEN; i++)
     {
-        m_brewOptions[i].begin();
+        m_brewOptions[i].setup();
     }
     m_flowMeter->reset();
-    m_begin = true;
+    m_flagSetup = true;
 }
 
 void BrewGroup::onFlowMeterPulse(){
@@ -442,9 +442,9 @@ void BrewOption::turnOnLed(bool delayAfterOn)
 
 // }
 
-void ExpressoMachine::begin() {
+void ExpressoMachine::setup() {
 
-    DEBUG3_PRINTLN("begin() on ExpressoMachine instance");
+    DEBUG4_PRINTLN("setup() on ExpressoMachine instance");
 
      pinMode(PUMP_PIN, OUTPUT);
      pinMode(SOLENOID_BOILER_PIN, OUTPUT);
@@ -454,7 +454,7 @@ void ExpressoMachine::begin() {
     {
         m_brewGroups[i].setup();
     }
-    m_begin = true;
+    m_flagSetup = true;
 }
 
 void ExpressoMachine::turnOnPump() {
@@ -533,19 +533,18 @@ BrewGroup* ExpressoMachine::getBrewGroup(int8_t groupNumber) {
     return NULL;
 }
 
-void ExpressoMachine::check() {
+void ExpressoMachine::loop() {
 
-//    DEBUG3_PRINTLN("ExpressoMachine::check()\n");
+    DEBUG5_PRINTLN("ExpressoMachine::loop()\n");
 
-    if (!m_begin) {
-        DEBUG3_PRINTLN("begin not called for ExpressoMachine instance");
+    if (!m_flagSetup) {
+        DEBUG3_PRINTLN("setup not called for ExpressoMachine instance");
         return;
     }
 
     bool isBrewing = false;
 
     for (int8_t i = 0; i < m_lenBrewGroups; i++) {
-//        DEBUG3_VALUE("  Calling check() on group %u; address: %p \n", m_brewGroups[i].getGroupNumber()); DEBUG3_PRINTLN(&m_brewGroups[i]);
         m_brewGroups[i].loop();
         isBrewing = m_brewGroups[i].isBrewing() || isBrewing;
     }
