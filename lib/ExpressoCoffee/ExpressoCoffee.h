@@ -113,13 +113,14 @@ class BrewOption {
 class SimpleFlowMeter {
     public:
         SimpleFlowMeter(int8_t pin) : m_pin(pin) {};
-        void count() { m_pulseCount++; };            //!< Increments flowmeter pulse counter.
+        void increment();
         void reset() { m_pulseCount=0; }             //!< Prepares the flow meter for a fresh measurement. Resets pulse counter.
         int8_t getPin() { return m_pin; };
         long getPulseCount() { return m_pulseCount; };
     protected:
         int8_t m_pin;
         long m_pulseCount = 0;
+        unsigned long m_lastPulseMs;
 };
 
 class BrewGroup {

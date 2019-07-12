@@ -35,7 +35,7 @@ void setup()
     DEBUG2_PRINTLN("Initializing coffee machine module v1.0");
 
     BrewGroup* groups = new BrewGroup[BREW_GROUPS_LEN] { BrewGroup(1, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN),
-    		   BrewGroup(2, GROUP2_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP2_PIN) };
+    		   BrewGroup(2, GROUP2_PINS, FLOWMETER_GROUP2_PIN, SOLENOID_GROUP2_PIN) };
 
     // DEBUG3_HEXVALLN("setup() 1 - group 1, address: ", groups[0]);
     // DEBUG3_HEXVALLN("setup() 1 - group 2, address: ", groups[1]);
@@ -43,7 +43,7 @@ void setup()
     ExpressoMachine::init(groups, BREW_GROUPS_LEN);
 
     expressoMachine = ExpressoMachine::getInstance();
-    expressoMachine->begin();
+    expressoMachine->setup();
 
     DEBUG2_PRINTLN("Initialization complete.");
 }
@@ -51,5 +51,5 @@ void setup()
 void loop()
 {
 
-    ExpressoMachine::getInstance()->check();
+    ExpressoMachine::getInstance()->loop();
 }

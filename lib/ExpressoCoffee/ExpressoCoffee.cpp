@@ -144,12 +144,12 @@ void BrewGroup::command(BrewOption* brewOption) {
         setStatusLeds(OFF, ALL);
         m_ptrCurrentBrewingOption->onStartBrewing();
         m_flowMeter->reset();
-        m_lastFlowmeterCount = m_flowMeter->getPulseCount();
+        m_lastFlowmeterCount = 0;
         m_brewingStartTime = millis();
         m_expressoMachine->turnOffBoilerSolenoid();
         turnOnGroupSolenoid();
         m_expressoMachine->turnOnPump();
-    } else if (m_ptrCurrentBrewingOption == brewOption || m_ptrCurrentBrewingOption == NULL) {
+    } else if (m_ptrCurrentBrewingOption == brewOption || brewOption == NULL) {
         // stop brewing
         DEBUG3_VALUE("Stop brewing on group ", m_groupNumber);
         DEBUG3_VALUELN(". Brew time: ", ((millis() - m_brewingStartTime) / 1000));
@@ -228,10 +228,13 @@ void BrewGroup::setup(){
 
 void BrewGroup::onFlowMeterPulse(){
     if (m_ptrCurrentBrewingOption) {
-        m_flowMeter->count();
+        m_flowMeter->increment();
+        m_lastFlowmeterCount = m_flowMeter->getPulseCount();
         DEBUG3_VALUE("Group ", m_groupNumber);
-        DEBUG3_VALUELN("flowmeter count: ", m_flowMeter->getPulseCount());
-        if(!isProgramming() && m_flowMeter->getPulseCount() >= m_ptrCurrentBrewingOption->getDoseFlowmeterCount()) {
+        DEBUG3_VALUELN(" flowmeter count: ", m_lastFlowmeterCount);
+        if(!isProgramming() && m_lastFlowmeterCount >= m_ptrCurrentBrewingOption->getDoseFlowmeterCount()) {
+            DEBUG3_VALUE("Flow count reached (", m_lastFlowmeterCount);
+            DEBUG3_PRINTLN("), commanding brewing to stop");
             command(NULL);
         }
     }
@@ -307,28 +310,26 @@ DosageRecord BrewGroup::loadDosageRecord() {
     }
 
     #if DEBUG_LEVEL >= 3
-        for (int8_t i = 0; i < BREW_GROUPS_LEN; i++) {
-            Serial.print(F("Dosage config for group "));
-            Serial.println(m_groupNumber);
-            Serial.print(F("  flowMeterPulseArray = [ "));
-            Serial.print(rec.flowMeterPulseArray[0]);
-            Serial.print(F(", "));
-            Serial.print(rec.flowMeterPulseArray[1]);
-            Serial.print(F(", "));
-            Serial.print(rec.flowMeterPulseArray[2]);
-            Serial.print(F(", "));
-            Serial.print(rec.flowMeterPulseArray[3]);
-            Serial.println(F(" ]"));
-            Serial.print(F("  durationArray = [ "));
-            Serial.print(rec.durationArray[0]);
-            Serial.print(F(", "));
-            Serial.print(rec.durationArray[1]);
-            Serial.print(F(", "));
-            Serial.print(rec.durationArray[2]);
-            Serial.print(F(", "));
-            Serial.print(rec.durationArray[3]);
-            Serial.println(F(" ]"));
-        }
+        Serial.print(F("Dosage config for group "));
+        Serial.println(m_groupNumber);
+        Serial.print(F("  flowMeterPulseArray = [ "));
+        Serial.print(rec.flowMeterPulseArray[0]);
+        Serial.print(F(", "));
+        Serial.print(rec.flowMeterPulseArray[1]);
+        Serial.print(F(", "));
+        Serial.print(rec.flowMeterPulseArray[2]);
+        Serial.print(F(", "));
+        Serial.print(rec.flowMeterPulseArray[3]);
+        Serial.println(F(" ]"));
+        Serial.print(F("  durationArray = [ "));
+        Serial.print(rec.durationArray[0]);
+        Serial.print(F(", "));
+        Serial.print(rec.durationArray[1]);
+        Serial.print(F(", "));
+        Serial.print(rec.durationArray[2]);
+        Serial.print(F(", "));
+        Serial.print(rec.durationArray[3]);
+        Serial.println(F(" ]"));
     #endif
 
     return rec;
@@ -510,7 +511,6 @@ bool ExpressoMachine::isProgramming() {
 /-----------------------------------------------------------------------*/
 bool ExpressoMachine::isBoilerWaterLevelLow() {
 	return digitalRead(WATER_LEVEL_PIN) == LOW;
-return false;
 }
 
 /*----------------------------------------------------------------------*
@@ -519,7 +519,6 @@ return false;
 /-----------------------------------------------------------------------*/
 bool ExpressoMachine::isFillingBoiler() {
      return digitalRead(SOLENOID_BOILER_PIN) == HIGH && digitalRead(PUMP_PIN) == HIGH;
-    return false;
 }
 
 BrewGroup* ExpressoMachine::getBrewGroup(int8_t groupNumber) {
@@ -569,4 +568,12 @@ void ExpressoMachine::loop() {
 
   }
 
+}
+
+void SimpleFlowMeter::increment() {
+    unsigned long currMillis = millis();
+    if ((currMillis - m_lastPulseMs) > 80) {
+        m_pulseCount++;                  //!< Increments flowmeter pulse counter.
+    }
+    m_lastPulseMs = currMillis;
 }
