@@ -10,10 +10,23 @@ int8_t
     SOLENOID_GROUP1_PIN(A0),
     SOLENOID_GROUP2_PIN(A1);
 
-int8_t GROUP1_PINS[GROUP_PINS_LEN] { 0, 4, 5, 6, 7 }; //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
-int8_t GROUP2_PINS[GROUP_PINS_LEN] { 8, 9, 10, 11, 12 }; //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
+int8_t GROUP1_PINS[GROUP_PINS_LEN] { 0, 4, 5, 6, 7 };       //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
+int8_t GROUP2_PINS[GROUP_PINS_LEN] { 8, 9, 10, 11, 12 };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
 
 ExpressoMachine* expressoMachine;
+
+SimpleFlowMeter flowMeterGroup1;
+SimpleFlowMeter flowMeterGroup2;
+
+void meterISRGroup1() {
+    DEBUG3_PRINTLN("meterISRGroup1()");
+    flowMeterGroup1.increment();
+}
+
+void meterISRGroup2() {
+    DEBUG3_PRINTLN("meterISRGroup2()");
+    flowMeterGroup1.increment();
+}
 
 void setup()
 {
@@ -21,28 +34,24 @@ void setup()
     #ifdef DEBUG_LEVEL
         Serial.begin(9600);
         while (!Serial);
-        delay(5 * 1000);
+        delay(2 * 1000);
     #endif
     
-    DEBUG2_PRINTLN("");
-    DEBUG2_PRINTLN("");
-    DEBUG2_PRINTLN("");
-    DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN(".");
     DEBUG2_PRINTLN("Initializing coffee machine module v1.0");
 
-    BrewGroup* groups = new BrewGroup[BREW_GROUPS_LEN] { BrewGroup(1, GROUP1_PINS, FLOWMETER_GROUP1_PIN, SOLENOID_GROUP1_PIN),
-    		   BrewGroup(2, GROUP2_PINS, FLOWMETER_GROUP2_PIN, SOLENOID_GROUP2_PIN) };
+    attachInterrupt(digitalPinToInterrupt(FLOWMETER_GROUP1_PIN), meterISRGroup1, RISING);
+    attachInterrupt(digitalPinToInterrupt(FLOWMETER_GROUP2_PIN), meterISRGroup2, RISING);
 
-    // DEBUG3_HEXVALLN("setup() 1 - group 1, address: ", groups[0]);
-    // DEBUG3_HEXVALLN("setup() 1 - group 2, address: ", groups[1]);
+    BrewGroup* groups = new BrewGroup[BREW_GROUPS_LEN] {
+        BrewGroup(1, GROUP1_PINS, &flowMeterGroup1, SOLENOID_GROUP1_PIN),
+    	BrewGroup(2, GROUP2_PINS, &flowMeterGroup2, SOLENOID_GROUP2_PIN)
+    };
 
-    ExpressoMachine::init(groups, BREW_GROUPS_LEN);
-
-    expressoMachine = ExpressoMachine::getInstance();
+    expressoMachine = new ExpressoMachine(groups, BREW_GROUPS_LEN);
     expressoMachine->setup();
 
     DEBUG2_PRINTLN("Initialization complete.");
@@ -50,6 +59,5 @@ void setup()
 
 void loop()
 {
-
-    ExpressoMachine::getInstance()->loop();
+    expressoMachine->loop();
 }
