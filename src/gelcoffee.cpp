@@ -28,8 +28,63 @@ void meterISRGroup2() {
     flowMeterGroup1.increment();
 }
 
+/*----------------------------------------------------------------------*
+/ execute initialization routine to blink brew option leds              *
+/ 1. turn on 1-5 on group 1 for 1 second                                *
+/ 2. turn off 1-4 on group 1 turn on 1-5 on group 2 for 1 second        *
+/ 3. turn off 1-4 on group 2 and let 5 on both groups for 300ms         *
+/ 4. turn off all leds on both groups                                   *
+/-----------------------------------------------------------------------*/
+void visualInit() {
+
+    int8_t blinkLedsCount = GROUP_PINS_LEN-1;
+
+    for (int8_t i = 0; i < blinkLedsCount; i++) {
+        pinMode(GROUP1_PINS[i], INPUT_PULLUP);
+        pinMode(GROUP2_PINS[i], INPUT_PULLUP);
+    }
+
+    digitalWrite(GROUP1_PINS[blinkLedsCount], LOW);
+    digitalWrite(GROUP2_PINS[blinkLedsCount], LOW);
+
+    pinMode(GROUP1_PINS[blinkLedsCount], OUTPUT);
+    pinMode(GROUP2_PINS[blinkLedsCount], OUTPUT);
+
+    for (int8_t i = 0; i < blinkLedsCount; i++) {
+        digitalWrite(GROUP1_PINS[i], LOW);
+        pinMode(GROUP1_PINS[i], OUTPUT);
+    }
+    delay(1000);
+    for (int8_t i = 0; i < blinkLedsCount; i++) {
+        pinMode(GROUP1_PINS[i], INPUT_PULLUP);
+    }
+    for (int8_t i = 0; i < blinkLedsCount; i++) {
+        digitalWrite(GROUP2_PINS[i], LOW);
+        pinMode(GROUP2_PINS[i], OUTPUT);
+    }
+    delay(1000);
+    for (int8_t i = 0; i < blinkLedsCount; i++) {
+        pinMode(GROUP2_PINS[i], INPUT_PULLUP);
+    }
+    delay(300);
+    pinMode(GROUP1_PINS[blinkLedsCount], INPUT_PULLUP);
+    pinMode(GROUP2_PINS[blinkLedsCount], INPUT_PULLUP);
+}
+
+
 void setup()
 {
+
+    // turn off all
+    pinMode(PUMP_PIN, OUTPUT);
+    digitalWrite(PUMP_PIN, HIGH);
+    pinMode(SOLENOID_BOILER_PIN, OUTPUT);
+    digitalWrite(SOLENOID_BOILER_PIN, HIGH);
+    pinMode(SOLENOID_GROUP1_PIN, OUTPUT);
+    digitalWrite(SOLENOID_GROUP1_PIN, HIGH);
+    pinMode(SOLENOID_GROUP2_PIN, OUTPUT);
+    digitalWrite(SOLENOID_GROUP2_PIN, HIGH);
+
 	// Initialize a serial connection for reporting values to the host
     #ifdef DEBUG_LEVEL
         Serial.begin(9600);
@@ -37,11 +92,15 @@ void setup()
         delay(2 * 1000);
     #endif
     
+    visualInit();
+
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN("");
     DEBUG2_PRINTLN(".");
     DEBUG2_PRINTLN("Initializing coffee machine module v1.0");
+
+    cli();
 
     attachInterrupt(digitalPinToInterrupt(FLOWMETER_GROUP1_PIN), meterISRGroup1, RISING);
     attachInterrupt(digitalPinToInterrupt(FLOWMETER_GROUP2_PIN), meterISRGroup2, RISING);
@@ -54,6 +113,7 @@ void setup()
     expressoMachine = new ExpressoMachine(groups, BREW_GROUPS_LEN);
     expressoMachine->setup();
 
+    sei();
     DEBUG2_PRINTLN("Initialization complete.");
 }
 
