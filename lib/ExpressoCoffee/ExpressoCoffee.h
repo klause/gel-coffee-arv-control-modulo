@@ -14,14 +14,17 @@
 const int8_t BREW_GROUPS_LEN = 2;
 const int8_t GROUP_PINS_LEN = 5;
 
-const int8_t NON_STOP_BREW_OPTION = 5;
+const int8_t NON_STOP_BREW_OPTION_INDEX = 4;                        //!< index in brew option array correspoding to continuos brew option
 
 const int16_t MILLIS_TO_ENTER_PROGRAM_MODE = 3000;
 
-const unsigned long LEDS_BLINK_INTERVAL = 800;          //!< interval at which to blink leds on programming mode (milliseconds)
+const unsigned long LEDS_BLINK_INTERVAL = 800;                      //!< interval at which to blink leds on programming mode (milliseconds)
 
 const bool DELAY_AFTER_ON = true;
 const bool DONT_DELAY_AFTER_ON = false;
+
+const long MIN_FLOWMETER_PULSE_CONFIG = 5;                           //!< min valeu allowed to set for flowmeter pulse config (count)
+const long MIN_DOSE_DURATION_CONFIG = 20 * 1000;                     //!< min valeu allowed to set for duration config (ms)
 
 const int8_t
     PUMP_PIN(A4),
@@ -63,31 +66,28 @@ class BrewGroup;
 class BrewOption {
 public:
     BrewOption(){};
-    BrewOption(int8_t pin, long doseFlowmeterCount, long doseDuration, BrewGroup* parentBrewGroup)
-        : m_pin(pin)
-        , m_doseFlowmeterCount(doseFlowmeterCount)
-        , m_doseDuration(doseDuration)
-        , m_parentBrewGroup(parentBrewGroup)
+    BrewOption(int8_t pin, long doseFlowmeterCount, int8_t doseDurationSec, BrewGroup* parentBrewGroup, bool continuos)
+        : isContinuos(continuos), m_pin(pin), m_parentBrewGroup(parentBrewGroup)
     {
         m_btn = new Button(pin);
+        setDosageConfig(doseDurationSec * 1000, doseFlowmeterCount);
         DEBUG3_VALUELN("BrewOption constructor, pin=", m_pin);
     };
     ButtonAction loop();
-    int8_t getLedPin() { return m_pin; };
     void setup()
     {
         DEBUG3_VALUELN("begin() on brew option of pin ", m_pin);
         m_btn->begin();
         m_pinMode = INPUT_PULLUP;
     };
+    bool isContinuos = false;
+    bool flagProgrammed = false;
+    LedStatus ledStatus = OFF;
     long getDoseFlowmeterCount() { return m_doseFlowmeterCount; };
     long getDoseDuration() { return m_doseDuration; };
-    bool isContinuos() { return m_doseFlowmeterCount <= 0 && m_doseDuration <= 0; };
     void onStartBrewing(bool isProgramming);
     void onEndBrewing(long brewingStartTime, long lastFlowmeterCount, bool isProgramming);
-    bool isProgrammed() { return m_flagProgrammed; };
-    void setProgrammed(bool flagProgrammed) { m_flagProgrammed = flagProgrammed; };
-    void setLedStatus(LedStatus s) { m_ledStatus = s; };
+    void setDosageConfig(int8_t doseDurationSec, long doseFlowmeterCount);
 
 private:
     void turnOnLed(bool delayAfterOn);
@@ -97,8 +97,6 @@ private:
     Button* m_btn = NULL;
     BrewGroup* m_parentBrewGroup = NULL;
     bool m_btnReleasedAfterPressedForProgram = false;
-    bool m_flagProgrammed = false;
-    LedStatus m_ledStatus = OFF;
     int8_t m_pinMode;
     unsigned long m_lastActionMs = 0;
 };
@@ -125,10 +123,10 @@ public:
     bool isBrewing() { return m_ptrCurrentBrewingOption; };
     bool isProgramming() { return m_programmingMode; };
     int8_t getGroupNumber() { return m_groupNumber; };
-    BrewOption* currentOptionBrewing() { return m_ptrCurrentBrewingOption; };
     void setParent(ExpressoMachine* expressoMachine) { m_ptrExpressoMachine = expressoMachine; };
     void setDosageConfig(DosageRecord dosageConfig);
     void saveDosageRecord();
+    BrewOption* m_ptrCurrentBrewingOption = NULL;
 
 private:
     int8_t m_groupNumber = 0;
@@ -142,7 +140,6 @@ private:
     bool m_ledsBlinkToggle;
 
     SimpleFlowMeter* m_flowMeter = NULL;
-    BrewOption* m_ptrCurrentBrewingOption = NULL;
     BrewOption* m_ptrProgrammingBrewOption = NULL;
     BrewOption m_brewOptions[GROUP_PINS_LEN];
 
@@ -183,10 +180,12 @@ private:
     BrewGroup* m_brewGroups;
     int8_t m_lenBrewGroups;
     void turnOffPump();
-    bool isBoilerWaterLevelLow();
-    bool isFillingBoiler();
     bool m_flagSetup = false;
     unsigned long m_waterLevelReachedMs = 0;
+    bool m_fillingBoiler = false;
+    bool isBoilerWaterLevelLow();
+    void startFillingBoiler();
+    void stopFillingBoiler();
 };
 
 #endif
