@@ -36,16 +36,15 @@ void BrewGroup::loop()
 
         bopt = &m_brewOptions[i];
 
-        int8_t pressed = bopt->loop();
+        ButtonAction pressed = bopt->loop();
 
-        
         DEBUG5_VALUE("BrewOption ", i+1);
         DEBUG5_VALUELN(" returned ", pressed);
 
         // 
         /* If brewing, only process button command for the current brewing option,
            pressing other buttons on the group is ignored */
-        if (isBrewing() && m_ptrCurrentBrewingOption != bopt) {
+        if (ptrCurrentBrewingOption != NULL && ptrCurrentBrewingOption != bopt) {
             continue;
         }
 
@@ -56,10 +55,9 @@ void BrewGroup::loop()
          * - Stop brewing (in prog mode) if pressed option is currently brewing
          * - Exit programming mode (continuos button) if this mode is active
          */
-        if (BUTTON_PRESSED_FOR_BREWING == pressed)
-        {
+        if (BUTTON_PRESSED_FOR_CONTINUOS_BREWING == pressed || BUTTON_PRESSED_FOR_BREWING == pressed) {
 
-            if (bopt->isContinuos && isProgramming()) {
+            if (BUTTON_PRESSED_FOR_CONTINUOS_BREWING && onProgrammingMode) {
                 // programming button was pressed to exit programmin mode
                 DEBUG3_VALUELN("Button pressed to exit programming mode on group ", m_groupNumber);
                 exitProgrammingMode();
@@ -67,11 +65,15 @@ void BrewGroup::loop()
             } else {
 				DEBUG3_VALUE("Button pressed for brewing. Option ", i+1);
 				DEBUG3_VALUELN(" on group ", m_groupNumber);
-				command(bopt);
+				if (ptrCurrentBrewingOption == NULL) {
+                    startBrewing(bopt);
+                } else {
+                    stopBrewing();
+                }
                 break;  //!< Exit for loop since no other command will be detected so fast in this group
             }
 
-        } else if (BUTTON_PRESSED_FOR_PROGRAM == pressed && m_ptrExpressoMachine->isProgramming()) {
+        } else if (BUTTON_PRESSED_FOR_PROGRAM == pressed && !m_ptrExpressoMachine->isProgramming()) {
             DEBUG3_VALUELN("Button pressed to enter programming mode on group ", m_groupNumber);
             enterProgrammingMode();
             break;  //!< Exit for loop since no other command will be detected so fast in this group
@@ -80,24 +82,12 @@ void BrewGroup::loop()
     }
 
     unsigned long currentMillis = millis();
-    if (isBrewing())
+    if (ptrCurrentBrewingOption != NULL)
     {
-        if (!isProgramming() && !m_ptrCurrentBrewingOption->isContinuos) {
-            /* if flowmeter pulses are not being incremented for malfunction
-            * stop brewing based on duration */
-            long elapsedBrewMillis = currentMillis - m_brewingStartTime;
-            if (m_flowMeter->getPulseCount() <= m_ptrCurrentBrewingOption->getDoseFlowmeterCount() &&
-                elapsedBrewMillis >= m_ptrCurrentBrewingOption->getDoseDuration()) {
-            		DEBUG3_PRINTLN("Brewing timed out by duration, stop brewing...");
-                    // command group to stop brewing
-                    command(m_ptrCurrentBrewingOption);
-            } else if(m_flowMeter->getPulseCount() >= m_ptrCurrentBrewingOption->getDoseFlowmeterCount()) {
-                DEBUG3_VALUE("Flow count reached (", m_flowMeter->getPulseCount());
-                DEBUG3_PRINTLN("), commanding brewing to stop");
-                command(NULL);
-            }
+        if (!onProgrammingMode && ptrCurrentBrewingOption->canFinishBrewing(currentMillis - m_brewingStartTime, m_flowMeter->getPulseCount())) {
+            stopBrewing();
         }
-    } else if (isProgramming()) {
+    } else if (onProgrammingMode) {
         if ((currentMillis - m_previousLedsBlinkMillis) >= LEDS_BLINK_INTERVAL) {
             m_ledsBlinkToggle = !m_ledsBlinkToggle;
             m_previousLedsBlinkMillis = currentMillis;
@@ -111,7 +101,7 @@ ButtonAction BrewOption::loop()
 
     DEBUG5_VALUELN("BrewOption::loop() option on pin ", m_pin);
 
-    /* INPUT_PULLUP need to be set before reading button valeu when: */
+    /* INPUT_PULLUP need to be set before reading button value */
 	if (m_pinMode != INPUT_PULLUP) {
     	pinMode(m_pin, INPUT_PULLUP);
         m_pinMode = INPUT_PULLUP;
@@ -121,58 +111,84 @@ ButtonAction BrewOption::loop()
     m_btn->read();
 
     if (ledStatus == ON) {
-        turnOnLed(true);
+        turnOnLed();
     }
 
-    DEBUG5_VALUELN("  Button last changed: ", millis() - m_btn->lastChange());
-
-    if (millis() - m_lastActionMs > 300) {  //!< Avoid subsequent click in short time
-        // if this is the programming button, check whether it was pressed long enough
-        if (isContinuos && m_btn->pressedFor(MILLIS_TO_ENTER_PROGRAM_MODE)) {
-            m_btnReleasedAfterPressedForProgram = false;
-            m_lastActionMs = millis();
-            return BUTTON_PRESSED_FOR_PROGRAM;
-        } else if (m_btn->wasReleased()) {
-            if (m_btnReleasedAfterPressedForProgram) {
-                m_lastActionMs = millis();
-                return BUTTON_PRESSED_FOR_BREWING;
-            } else {
-                m_btnReleasedAfterPressedForProgram = true;
-            }
-        }
+    if (m_btn->wasReleased() && millis() - m_lastActionMs > 300) {
+        m_lastActionMs = millis();
+        return BUTTON_PRESSED_FOR_BREWING;
     }
 
-    return BUTTON_NOT_PRESSED;;
+    return BUTTON_NOT_PRESSED;
 }
 
+ButtonAction NonStopBrewOption::loop()
+{
 
-void BrewGroup::command(BrewOption* brewOption) {
-    if (m_ptrCurrentBrewingOption == NULL && brewOption != NULL) {
-        // start brewing
-        DEBUG3_VALUELN("Start brewing on group ", m_groupNumber);
-        m_ptrCurrentBrewingOption = brewOption;
-        setStatusLeds(OFF, ALL);
-        m_ptrCurrentBrewingOption->onStartBrewing(isProgramming());
-        m_flowMeter->reset();
-        m_brewingStartTime = millis();
-        m_ptrExpressoMachine->turnOffBoilerSolenoid();
-        turnOnGroupSolenoid();
-        m_ptrExpressoMachine->turnOnPump();
-    } else if (m_ptrCurrentBrewingOption == brewOption || brewOption == NULL) {
-        // stop brewing
-        DEBUG3_VALUE("Stop brewing on group ", m_groupNumber);
-        DEBUG3_VALUELN(". Brew time: ", ((millis() - m_brewingStartTime) / 1000));
-        // only turn off pump if other groups are not brewing
-        m_ptrExpressoMachine->turnOffPump(this);
-        turnOffGroupSolenoid();
-    	m_ptrCurrentBrewingOption->onEndBrewing(m_brewingStartTime, m_flowMeter->getPulseCount(), isProgramming());
-        if (isProgramming())
-        {
-            setStatusLeds(ON, ONLY_PROGRAMMED);
-            saveDosageRecord();
+    ButtonAction ret = BrewOption::loop();
+
+    if (BUTTON_PRESSED_FOR_BREWING == ret) {
+        if (m_btnReleasedAfterPressedForProgram && millis() - m_lastActionMs > 300) {
+            m_lastActionMs = millis();
+            ret = BUTTON_PRESSED_FOR_CONTINUOS_BREWING;
+        } else {
+            m_btnReleasedAfterPressedForProgram = true;
+            ret = BUTTON_NOT_PRESSED;
         }
-        m_ptrCurrentBrewingOption = NULL;
+    } else if (m_btn->pressedFor(MILLIS_TO_ENTER_PROGRAM_MODE)) {
+        m_btnReleasedAfterPressedForProgram = false;
+        m_lastActionMs = millis();
+        return BUTTON_PRESSED_FOR_PROGRAM;
     }
+
+    return ret;
+}
+
+bool BrewOption::canFinishBrewing(unsigned long elapsedBrewMillis, long pulseCount) {
+
+    /* if flowmeter pulses are not being incremented for malfunction
+    * stop brewing based on duration */
+    if (pulseCount <= doseFlowmeterCount && elapsedBrewMillis >= doseDurationMillis) {
+        DEBUG3_PRINTLN("Brewing timed out by duration, stop brewing...");
+        // command group to stop brewing
+        return true;
+    } else if(pulseCount >= doseFlowmeterCount) {
+        DEBUG3_VALUE("Flow count reached (", m_flowMeter->getPulseCount());
+        DEBUG3_PRINTLN("), commanding brewing to stop");
+        return true;
+    }
+
+    return false;
+}
+
+void BrewGroup::startBrewing(BrewOption* brewOption) {
+    // start brewing
+    DEBUG3_VALUELN("Start brewing on group ", m_groupNumber);
+    ptrCurrentBrewingOption = brewOption;                               //!< set brewing option on correponding group
+    setStatusLeds(OFF, ALL);                                            //!< set all led status to OFF
+    ptrCurrentBrewingOption->onStartBrewing(onProgrammingMode);
+    m_flowMeter->reset();                                               //!< reset flowmeter count
+    m_brewingStartTime = millis();                                      //!< store brewing start time
+    m_ptrExpressoMachine->turnOffBoilerSolenoid();                      //!< ensure boiler solenoid is OFF before start pumping water
+    turnOnGroupSolenoid();                                              //!< turn ON solenoid on corresponding group
+    m_ptrExpressoMachine->turnOnPump();                                 //!< turn ON water pump
+}
+
+void BrewGroup::stopBrewing() {
+    // stop brewing
+    DEBUG3_VALUE("Stop brewing on group ", m_groupNumber);
+    DEBUG3_VALUE(". Brew time: ", ((millis() - m_brewingStartTime) / 1000));
+    DEBUG3_VALUELN(". Flowmeter count: ", m_flowMeter->getPulseCount());
+    // only turn off pump if other groups are not brewing
+    m_ptrExpressoMachine->turnOffPump(this);
+    turnOffGroupSolenoid();
+    ptrCurrentBrewingOption->onEndBrewing(m_brewingStartTime, m_flowMeter->getPulseCount(), onProgrammingMode);
+    if (onProgrammingMode)
+    {
+        setStatusLeds(ON, ONLY_PROGRAMMED);
+        saveDosageRecord();
+    }
+    ptrCurrentBrewingOption = NULL;
 }
 
 void BrewGroup::turnOnGroupSolenoid() {
@@ -198,9 +214,10 @@ void BrewGroup::setup(){
         if (NON_STOP_BREW_OPTION_INDEX != i) {
             flowMeterPulseConfig = dosageConfig.flowMeterPulseArray[i];
             durationConfig = dosageConfig.durationArray[i];
+            m_brewOptions[i] = BrewOption(m_brewOptionPins[i], flowMeterPulseConfig, durationConfig, this);
+        } else {
+            m_brewOptions[i] = NonStopBrewOption(m_brewOptionPins[i], flowMeterPulseConfig, durationConfig, this);
         }
-        
-        m_brewOptions[i] = BrewOption(m_brewOptionPins[i], flowMeterPulseConfig, durationConfig, this, (NON_STOP_BREW_OPTION_INDEX == i));
     }
 
     pinMode(m_solenoidPin, OUTPUT);
@@ -215,7 +232,7 @@ void BrewGroup::setup(){
 
 void BrewGroup::enterProgrammingMode() {
     DEBUG2_PRINT("Entering programming mode");
-    m_programmingMode = true;
+    onProgrammingMode = true;
     m_previousLedsBlinkMillis = millis();
     m_ledsBlinkToggle = true;
     for (int8_t i = 0; i < GROUP_PINS_LEN; i++)
@@ -227,7 +244,7 @@ void BrewGroup::enterProgrammingMode() {
 
 void BrewGroup::exitProgrammingMode() {
     DEBUG2_PRINT("Exiting programming mode");
-    m_programmingMode = false;
+    onProgrammingMode = false;
     for (int8_t i = 0; i < GROUP_PINS_LEN;i++)
     {
         m_brewOptions[i].flagProgrammed = false;
@@ -252,6 +269,7 @@ void BrewGroup::setStatusLeds(LedStatus s, FilterOption filter) {
 DosageRecord BrewGroup::loadDosageRecord() {
 
     DosageRecord rec = DosageRecord();
+    int8_t ret = -1;
 
     if (EEPROM_init()) {
         DEBUG3_VALUELN("Loading dosage config from EEPROM for group ", m_groupNumber);
@@ -259,14 +277,14 @@ DosageRecord BrewGroup::loadDosageRecord() {
         size_t location = EEPROM_SIZE( dataLen ) * (m_groupNumber-1);
 
         #if DEBUG_LEVEL >= DEBUG_ERROR
-            int8_t ret = EEPROM_safe_read(location, (uint8_t*) &rec, dataLen);
+            ret = EEPROM_safe_read(location, (uint8_t*) &rec, dataLen);
             if (ret < 0) {
                 DEBUG1_VALUE("Error reading dosage record for group ", m_groupNumber);
                 DEBUG1_VALUE(" at location: ", location);
                 DEBUG1_VALUELN(". EEPROM_safe_write returned: ", ret);
             }
         #else
-            EEPROM_safe_read(location, (uint8_t*) &rec, dataLen);
+            ret = EEPROM_safe_read(location, (uint8_t*) &rec, dataLen);
         #endif
 
         if (ret < 0) {
@@ -307,8 +325,8 @@ void BrewGroup::saveDosageRecord() {
     DosageRecord rec = DosageRecord();
 
     for (int8_t i = 0; i < GROUP_PINS_LEN-1; i++) {
-        rec.durationArray[i] = m_brewOptions[i].getDoseDuration() / 1000;
-        rec.flowMeterPulseArray[i] = m_brewOptions[i].getDoseFlowmeterCount();
+        rec.durationArray[i] = m_brewOptions[i].doseDurationMillis / 1000;
+        rec.flowMeterPulseArray[i] = m_brewOptions[i].doseFlowmeterCount;
     }
     
     size_t dataLen = sizeof(rec);
@@ -359,7 +377,6 @@ void BrewOption::onEndBrewing(long brewingStartMillis, long lastFlowmeterCount, 
     } else {
         ledStatus = OFF;
     }
-    delay(100);
 }
 
 void BrewOption::onStartBrewing(bool isProgramming) {
@@ -369,7 +386,7 @@ void BrewOption::onStartBrewing(bool isProgramming) {
     ledStatus = ON;
 }
 
-void BrewOption::turnOnLed(bool delayAfterOn)
+void BrewOption::turnOnLed()
 {
 	// turn LED on if button is released
     if (m_btn->isReleased())
@@ -378,14 +395,12 @@ void BrewOption::turnOnLed(bool delayAfterOn)
         digitalWrite(m_pin, LOW);
         pinMode(m_pin, OUTPUT);
         m_pinMode = OUTPUT;
-        // if (delayAfterOn) delay(100);
     }
 }
 
-void BrewOption::setDosageConfig(int8_t doseDurationMs, long doseFlowmeterCount) {
-    m_doseFlowmeterCount  = doseFlowmeterCount < MIN_FLOWMETER_PULSE_CONFIG ? MIN_FLOWMETER_PULSE_CONFIG : doseFlowmeterCount;
-
-    m_doseDuration = doseDurationMs < MIN_DOSE_DURATION_CONFIG ? MIN_DOSE_DURATION_CONFIG : doseDurationMs;
+void BrewOption::setDosageConfig(int8_t durationParamMillis, long flowmeterParamCount) {
+    doseFlowmeterCount  = flowmeterParamCount < MIN_FLOWMETER_PULSE_CONFIG ? MIN_FLOWMETER_PULSE_CONFIG : flowmeterParamCount;
+    doseDurationMillis = durationParamMillis < MIN_DOSE_DURATION_CONFIG ? MIN_DOSE_DURATION_CONFIG : durationParamMillis;
 }
 
 void ExpressoMachine::setup() {
@@ -394,7 +409,7 @@ void ExpressoMachine::setup() {
 
      pinMode(PUMP_PIN, OUTPUT);
      pinMode(SOLENOID_BOILER_PIN, OUTPUT);
-     pinMode(WATER_LEVEL_PIN, INPUT_PULLUP);
+     pinMode(WATER_LEVEL_PIN, INPUT);
 
     for (int8_t i = 0; i < m_lenBrewGroups; i++)
     {
@@ -405,7 +420,7 @@ void ExpressoMachine::setup() {
 
 void ExpressoMachine::turnOnPump() {
     DEBUG3_PRINTLN("Turning ON pump");
-    digitalWrite(PUMP_PIN, LOW);
+    digitalWrite(PUMP_PIN, LOW);        //!< LOW turns pump ON
 }
 
 /*----------------------------------------------------------------------*
@@ -415,7 +430,7 @@ void ExpressoMachine::turnOffPump(BrewGroup* brewGroupAsking) {
     
     for (int8_t i = 0; i < m_lenBrewGroups; i++)
     {
-        if (m_brewGroups[i].isBrewing() && brewGroupAsking != &m_brewGroups[i])
+        if (m_brewGroups[i].ptrCurrentBrewingOption != NULL && brewGroupAsking != &m_brewGroups[i])
         {
             DEBUG3_VALUELN("Not stopping pump, other group brewing: ", m_brewGroups[i].getGroupNumber());
             return;
@@ -443,7 +458,7 @@ void ExpressoMachine::turnOffBoilerSolenoid() {
 
 bool ExpressoMachine::isProgramming() {
 	for (int i = 0; i < BREW_GROUPS_LEN; ++i) {
-		if (m_brewGroups[i].isProgramming()) {
+		if (m_brewGroups[i].onProgrammingMode) {
 			return true;
 		}
 	}
@@ -505,7 +520,7 @@ void ExpressoMachine::loop() {
 
     for (int8_t i = 0; i < m_lenBrewGroups; i++) {
         m_brewGroups[i].loop();
-        isBrewing = m_brewGroups[i].isBrewing() || isBrewing;
+        isBrewing = m_brewGroups[i].ptrCurrentBrewingOption != NULL || isBrewing;
     }
 
   // if groups are not brewing
@@ -535,8 +550,9 @@ void ExpressoMachine::loop() {
 
 void SimpleFlowMeter::increment() {
     unsigned long currMillis = millis();
-    if ((currMillis - m_lastPulseMs) > 80) {
+    if ((currMillis - m_lastPulseMs) > 20) {
         m_pulseCount++;                  //!< Increments flowmeter pulse counter.
+        // DEBUG1_VALUELN("Pulse Count: ", m_pulseCount)
     }
     m_lastPulseMs = currMillis;
 }

@@ -8,7 +8,7 @@
 
 #include "JC_Button.h"
 
-#define DEBUG_LEVEL DEBUG_MID
+#define DEBUG_LEVEL DEBUG_NONE
 #include <Debug.h>
 
 const int8_t BREW_GROUPS_LEN = 2;
@@ -23,18 +23,26 @@ const unsigned long LEDS_BLINK_INTERVAL = 800;                      //!< interva
 const bool DELAY_AFTER_ON = true;
 const bool DONT_DELAY_AFTER_ON = false;
 
-const long MIN_FLOWMETER_PULSE_CONFIG = 5;                           //!< min valeu allowed to set for flowmeter pulse config (count)
+const long MIN_FLOWMETER_PULSE_CONFIG = 60;                          //!< min valeu allowed to set for flowmeter pulse config (count)
 const long MIN_DOSE_DURATION_CONFIG = 20 * 1000;                     //!< min valeu allowed to set for duration config (ms)
 
-const int8_t
-    PUMP_PIN(A4),
-    WATER_LEVEL_PIN(A2),
-    SOLENOID_BOILER_PIN(A3);
+#ifndef PUMP_PIN
+#define PUMP_PIN A5
+#endif
+
+#ifndef WATER_LEVEL_PIN
+#define WATER_LEVEL_PIN 9
+#endif
+
+#ifndef SOLENOID_BOILER_PIN
+#define SOLENOID_BOILER_PIN A4
+#endif
 
 enum ButtonAction {
     BUTTON_NOT_PRESSED = 0,
     BUTTON_PRESSED_FOR_BREWING = 1,
-    BUTTON_PRESSED_FOR_PROGRAM = 2
+    BUTTON_PRESSED_FOR_PROGRAM = 2,
+    BUTTON_PRESSED_FOR_CONTINUOS_BREWING = 3
 };
 
 enum LedStatus {
@@ -66,12 +74,15 @@ class BrewGroup;
 class BrewOption {
 public:
     BrewOption(){};
-    BrewOption(int8_t pin, long doseFlowmeterCount, int8_t doseDurationSec, BrewGroup* parentBrewGroup, bool continuos)
-        : isContinuos(continuos), m_pin(pin), m_parentBrewGroup(parentBrewGroup)
+    BrewOption(int8_t pin, long doseFlowmeterCount, int8_t doseDurationSec, BrewGroup* parentBrewGroup)
+        : m_pin(pin), m_parentBrewGroup(parentBrewGroup)
     {
         m_btn = new Button(pin);
         setDosageConfig(doseDurationSec * 1000, doseFlowmeterCount);
-        DEBUG3_VALUELN("BrewOption constructor, pin=", m_pin);
+        DEBUG3_VALUE("BrewOption constructor, pin=", m_pin);
+        DEBUG3_VALUE(". Dose duration(s): ", doseDurationSec);
+        DEBUG3_VALUELN(". Flowmeter count: ", doseFlowmeterCount);
+        // DEBUG3_VALUELN(". Continuos: ", isContinuos ? "TRUE" : "FALSE");
     };
     ButtonAction loop();
     void setup()
@@ -80,25 +91,25 @@ public:
         m_btn->begin();
         m_pinMode = INPUT_PULLUP;
     };
-    bool isContinuos = false;
+    // bool isContinuos = false;
     bool flagProgrammed = false;
     LedStatus ledStatus = OFF;
-    long getDoseFlowmeterCount() { return m_doseFlowmeterCount; };
-    long getDoseDuration() { return m_doseDuration; };
+    long doseFlowmeterCount = MIN_FLOWMETER_PULSE_CONFIG;
+    unsigned long doseDurationMillis = MIN_DOSE_DURATION_CONFIG;
     void onStartBrewing(bool isProgramming);
     void onEndBrewing(long brewingStartTime, long lastFlowmeterCount, bool isProgramming);
     void setDosageConfig(int8_t doseDurationSec, long doseFlowmeterCount);
+    bool canFinishBrewing(unsigned long elapsedBrewMillis, long pulseCount);
+
+protected:
+    Button* m_btn = NULL;
+    unsigned long m_lastActionMs = 0;
 
 private:
-    void turnOnLed(bool delayAfterOn);
+    void turnOnLed();
     int8_t m_pin = -1;
-    long m_doseFlowmeterCount = 30;
-    long m_doseDuration = 30 * 1000;
-    Button* m_btn = NULL;
     BrewGroup* m_parentBrewGroup = NULL;
-    bool m_btnReleasedAfterPressedForProgram = false;
     int8_t m_pinMode;
-    unsigned long m_lastActionMs = 0;
 };
 
 class SimpleFlowMeter {
@@ -109,24 +120,36 @@ public:
     long getPulseCount() { return m_pulseCount; };
 
 protected:
-    long m_pulseCount = 0;
+    volatile long m_pulseCount = 0;
     unsigned long m_lastPulseMs;
+};
+
+class NonStopBrewOption: public BrewOption {
+public:
+    NonStopBrewOption(){};
+    NonStopBrewOption(int8_t pin, long doseFlowmeterCount, int8_t doseDurationSec, BrewGroup* parentBrewGroup)
+        : BrewOption(pin, doseFlowmeterCount, doseDurationSec, parentBrewGroup)
+    {
+    };
+    ButtonAction loop();
+private:
+    bool m_btnReleasedAfterPressedForProgram = true;
 };
 
 class BrewGroup {
 public:
     BrewGroup(){};
     BrewGroup(int8_t groupNumber, int8_t pinArray[GROUP_PINS_LEN], SimpleFlowMeter* flowMeter, int8_t solenoidPin);
-    void command(BrewOption* brewOption);
+    void startBrewing(BrewOption* brewOption);
+    void stopBrewing();
     void loop();
     void setup();
-    bool isBrewing() { return m_ptrCurrentBrewingOption; };
-    bool isProgramming() { return m_programmingMode; };
     int8_t getGroupNumber() { return m_groupNumber; };
     void setParent(ExpressoMachine* expressoMachine) { m_ptrExpressoMachine = expressoMachine; };
     void setDosageConfig(DosageRecord dosageConfig);
     void saveDosageRecord();
-    BrewOption* m_ptrCurrentBrewingOption = NULL;
+    BrewOption* ptrCurrentBrewingOption = NULL;
+    bool onProgrammingMode = false;
 
 private:
     int8_t m_groupNumber = 0;
@@ -134,7 +157,6 @@ private:
     int8_t* m_brewOptionPins;
     unsigned long m_brewingStartTime = -1;
     unsigned long m_previousLedsBlinkMillis = 0;
-    bool m_programmingMode = false;
     ExpressoMachine* m_ptrExpressoMachine = NULL;
     bool m_flagSetup = false;
     bool m_ledsBlinkToggle;
