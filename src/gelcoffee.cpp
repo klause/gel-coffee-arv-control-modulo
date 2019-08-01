@@ -4,31 +4,31 @@
 #define FLOWMETER_GROUP1_PIN    2 //!< INT0
 #define FLOWMETER_GROUP2_PIN    3 //!< INT1
 
-#define GROUP1_OPTION1_PIN      4
+#define GROUP1_OPTION1_PIN      A0
 #define GROUP1_OPTION2_PIN      5
-#define GROUP1_OPTION3_PIN      6
-#define GROUP1_OPTION4_PIN      8
-#define GROUP1_OPTION5_PIN      7
+#define GROUP1_OPTION3_PIN      1
+#define GROUP1_OPTION4_PIN      0
+#define GROUP1_OPTION5_PIN      4
 
-#define WATER_LEVEL_PIN         9
+#define WATER_LEVEL_PIN         8
 
-#define GROUP2_OPTION1_PIN      10
-#define GROUP2_OPTION2_PIN      11
-#define GROUP2_OPTION3_PIN      12
-#define GROUP2_OPTION4_PIN      13
-#define GROUP2_OPTION5_PIN      A0
+#define GROUP2_OPTION1_PIN      A5
+#define GROUP2_OPTION2_PIN      A4
+#define GROUP2_OPTION3_PIN      A3
+#define GROUP2_OPTION4_PIN      A2
+#define GROUP2_OPTION5_PIN      A1
 
-#define SOLENOID_GROUP1_PIN     A3
-#define SOLENOID_GROUP2_PIN     A2
-#define SOLENOID_BOILER_PIN     A4
-#define PUMP_PIN                A5
+#define SOLENOID_GROUP1_PIN     11
+#define SOLENOID_GROUP2_PIN     12
+#define SOLENOID_BOILER_PIN     10
+#define PUMP_PIN                9
 
 #include <ExpressoCoffee.h>
 
-#define DEBUG_LEVEL DEBUG_NONE
+const uint8_t FLOWMETER_DEBOUNCE_INVERVAL_MS = 30;
 
-int8_t GROUP1_PINS[GROUP_PINS_LEN] { GROUP1_OPTION1_PIN, GROUP1_OPTION2_PIN, GROUP1_OPTION3_PIN, GROUP1_OPTION4_PIN, GROUP1_OPTION5_PIN };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
-int8_t GROUP2_PINS[GROUP_PINS_LEN] { GROUP2_OPTION1_PIN, GROUP2_OPTION2_PIN, GROUP2_OPTION3_PIN, GROUP2_OPTION4_PIN, GROUP2_OPTION5_PIN };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuos
+int8_t GROUP1_PINS[BREW_OPTIONS_LEN] { GROUP1_OPTION1_PIN, GROUP1_OPTION2_PIN, GROUP1_OPTION3_PIN, GROUP1_OPTION4_PIN, GROUP1_OPTION5_PIN };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuous
+int8_t GROUP2_PINS[BREW_OPTIONS_LEN] { GROUP2_OPTION1_PIN, GROUP2_OPTION2_PIN, GROUP2_OPTION3_PIN, GROUP2_OPTION4_PIN, GROUP2_OPTION5_PIN };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuous
 
 ExpressoMachine* expressoMachine;
 
@@ -36,13 +36,25 @@ SimpleFlowMeter flowMeterGroup1;
 SimpleFlowMeter flowMeterGroup2;
 
 void meterISRGroup1() {
+    static unsigned long lastInterruptMillis = 0;
     DEBUG5_PRINTLN("meterISRGroup1()");
-    flowMeterGroup1.increment();
+    volatile unsigned long interruptMillis = millis();
+    if (interruptMillis - lastInterruptMillis > FLOWMETER_DEBOUNCE_INVERVAL_MS)
+    {
+        flowMeterGroup1.increment();
+    }
+    lastInterruptMillis = interruptMillis;
 }
 
 void meterISRGroup2() {
+    static unsigned long lastInterruptMillis = 0;
+    volatile unsigned long interruptMillis = millis();
     DEBUG5_PRINTLN("meterISRGroup2()");
-    flowMeterGroup2.increment();
+    if (interruptMillis - lastInterruptMillis > FLOWMETER_DEBOUNCE_INVERVAL_MS)
+    {
+        flowMeterGroup2.increment();
+    }
+    lastInterruptMillis = interruptMillis;
 }
 
 /*----------------------------------------------------------------------*
@@ -56,48 +68,67 @@ void visualInit() {
 
     DEBUG2_PRINTLN("Init routine to blink leds");
 
-    int8_t blinkLedsCount = GROUP_PINS_LEN-1;
-
     // start with all leds off
-    for (int8_t i = 0; i < GROUP_PINS_LEN; i++) {
+    for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
         pinMode(GROUP1_PINS[i], INPUT_PULLUP);
+        DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP1_PINS[i]);
         pinMode(GROUP2_PINS[i], INPUT_PULLUP);
+        DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP2_PINS[i]);
     }
 
     // turn on 5th led on group 1
-    digitalWrite(GROUP1_PINS[blinkLedsCount], LOW);
-    pinMode(GROUP1_PINS[blinkLedsCount], OUTPUT);
+    digitalWrite(GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX], LOW);
+    pinMode(GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX], OUTPUT);
+    DEBUG3_VALUELN("Pin mode OUTPUT on pin: ", GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX]);
 
     // turn on 5th led on group 2
-    digitalWrite(GROUP2_PINS[blinkLedsCount], LOW);
-    pinMode(GROUP2_PINS[blinkLedsCount], OUTPUT);
+    digitalWrite(GROUP2_PINS[CONTINUOUS_BREW_OPTION_INDEX], LOW);
+    pinMode(GROUP2_PINS[CONTINUOUS_BREW_OPTION_INDEX], OUTPUT);
+    DEBUG3_VALUELN("Pin mode OUTPUT on pin: ", GROUP2_PINS[CONTINUOUS_BREW_OPTION_INDEX]);
 
     // turn on first 4 leds on group 1 for 1 second
-    for (int8_t i = 0; i < blinkLedsCount; i++) {
-        digitalWrite(GROUP1_PINS[i], LOW);
-        pinMode(GROUP1_PINS[i], OUTPUT);
+    for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
+        if (i != CONTINUOUS_BREW_OPTION_INDEX) {
+            digitalWrite(GROUP1_PINS[i], LOW);
+            pinMode(GROUP1_PINS[i], OUTPUT);
+            DEBUG3_VALUELN("Pin mode OUTPUT on pin: ", GROUP1_PINS[i]);
+        }
     }
+    DEBUG3_PRINTLN("Delay...");
     delay(1000);
     // turn off first 4 leds on group 1
-    for (int8_t i = 0; i < blinkLedsCount; i++) {
-        pinMode(GROUP1_PINS[i], INPUT_PULLUP);
+    for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
+        if (i != CONTINUOUS_BREW_OPTION_INDEX) {
+            pinMode(GROUP1_PINS[i], INPUT_PULLUP);
+            DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP1_PINS[i]);
+        }
     }
 
     // turn on first 4 leds on group 2 for 1 second
-    for (int8_t i = 0; i < blinkLedsCount; i++) {
-        digitalWrite(GROUP2_PINS[i], LOW);
-        pinMode(GROUP2_PINS[i], OUTPUT);
+    for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
+        if (i != CONTINUOUS_BREW_OPTION_INDEX) {
+            digitalWrite(GROUP2_PINS[i], LOW);
+            pinMode(GROUP2_PINS[i], OUTPUT);
+            DEBUG3_VALUELN("Pin mode OUTPUT on pin: ", GROUP2_PINS[i]);
+        }
     }
+    DEBUG3_PRINTLN("Delay...");
     delay(1000);
     // turn off first 4 leds on group 2
-    for (int8_t i = 0; i < blinkLedsCount; i++) {
-        pinMode(GROUP2_PINS[i], INPUT_PULLUP);
+    for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
+        if (i != CONTINUOUS_BREW_OPTION_INDEX) {
+            pinMode(GROUP2_PINS[i], INPUT_PULLUP);
+            DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP2_PINS[i]);
+        }
     }
-    delay(300);
+    DEBUG3_PRINTLN("Delay...");
+    delay(800);
     
     // turn off 5th led both groups
-    pinMode(GROUP1_PINS[blinkLedsCount], INPUT_PULLUP);
-    pinMode(GROUP2_PINS[blinkLedsCount], INPUT_PULLUP);
+    pinMode(GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX], INPUT_PULLUP);
+    DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX]);
+    pinMode(GROUP2_PINS[CONTINUOUS_BREW_OPTION_INDEX], INPUT_PULLUP);
+    DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP2_PINS[CONTINUOUS_BREW_OPTION_INDEX]);
 
     DEBUG2_PRINTLN("End blinking leds");
 
@@ -117,13 +148,34 @@ void setup()
     pinMode(SOLENOID_GROUP2_PIN, OUTPUT);
     digitalWrite(SOLENOID_GROUP2_PIN, HIGH);
 
+    // Pin 13 connected to ground
+    pinMode(13, INPUT);
+
 	// Initialize a serial connection for reporting values to the host
     #ifdef DEBUG_LEVEL
         Serial.begin(9600);
         while (!Serial);
-        delay(2 * 1000);
     #endif
-    
+
+
+    DEBUG1_VALUELN("FLOWMETER_GROUP1_PIN: ", FLOWMETER_GROUP1_PIN);
+    DEBUG1_VALUELN("FLOWMETER_GROUP2_PIN: ", FLOWMETER_GROUP2_PIN);
+    DEBUG1_VALUELN("GROUP1_OPTION1_PIN: ", GROUP1_OPTION1_PIN);
+    DEBUG1_VALUELN("GROUP1_OPTION2_PIN: ", GROUP1_OPTION2_PIN);
+    DEBUG1_VALUELN("GROUP1_OPTION3_PIN: ", GROUP1_OPTION3_PIN);
+    DEBUG1_VALUELN("GROUP1_OPTION4_PIN: ", GROUP1_OPTION4_PIN);
+    DEBUG1_VALUELN("GROUP1_OPTION5_PIN: ", GROUP1_OPTION5_PIN);
+    DEBUG1_VALUELN("WATER_LEVEL_PIN: ", WATER_LEVEL_PIN);
+    DEBUG1_VALUELN("GROUP2_OPTION1_PIN: ", GROUP2_OPTION1_PIN);
+    DEBUG1_VALUELN("GROUP2_OPTION2_PIN: ", GROUP2_OPTION2_PIN);
+    DEBUG1_VALUELN("GROUP2_OPTION3_PIN: ", GROUP2_OPTION3_PIN);
+    DEBUG1_VALUELN("GROUP2_OPTION4_PIN: ", GROUP2_OPTION4_PIN);
+    DEBUG1_VALUELN("GROUP2_OPTION5_PIN: ", GROUP2_OPTION5_PIN);
+    DEBUG1_VALUELN("SOLENOID_GROUP1_PIN: ", SOLENOID_GROUP1_PIN);
+    DEBUG1_VALUELN("SOLENOID_GROUP2_PIN: ", SOLENOID_GROUP2_PIN);
+    DEBUG1_VALUELN("SOLENOID_BOILER_PIN: ", SOLENOID_BOILER_PIN);
+    DEBUG1_VALUELN("PUMP_PIN: ", PUMP_PIN);
+
     visualInit();
 
     DEBUG2_PRINTLN("");
@@ -142,7 +194,7 @@ void setup()
     	BrewGroup(2, GROUP2_PINS, &flowMeterGroup2, SOLENOID_GROUP2_PIN)
     };
 
-    expressoMachine = new ExpressoMachine(groups, BREW_GROUPS_LEN);
+    expressoMachine = new ExpressoMachine(groups, BREW_GROUPS_LEN, PUMP_PIN, SOLENOID_BOILER_PIN, WATER_LEVEL_PIN);
     expressoMachine->setup();
 
     sei();
