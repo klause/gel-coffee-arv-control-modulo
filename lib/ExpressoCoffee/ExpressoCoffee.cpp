@@ -319,7 +319,7 @@ DosageRecord BrewGroup::loadDosageRecord() {
 
     }
 
-    #if DEBUG_LEVEL >= 3
+    #if DEBUG_LEVEL >= DEBUG_MID
         Serial.print(F("Dosage config for group "));
         Serial.println(m_groupNumber);
         Serial.print(F("  flowMeterPulseArray = [ "));

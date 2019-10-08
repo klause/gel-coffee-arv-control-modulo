@@ -25,6 +25,8 @@
 
 #include <ExpressoCoffee.h>
 
+#include <Debug.h>
+
 const uint8_t FLOWMETER_DEBOUNCE_INVERVAL_MS = 30;
 
 int8_t GROUP1_PINS[BREW_OPTIONS_LEN] { GROUP1_OPTION1_PIN, GROUP1_OPTION2_PIN, GROUP1_OPTION3_PIN, GROUP1_OPTION4_PIN, GROUP1_OPTION5_PIN };    //!< short single coffee, long single coffee, short double coffee, long double coffee, continuous
@@ -37,8 +39,8 @@ SimpleFlowMeter flowMeterGroup2;
 
 void meterISRGroup1() {
     static unsigned long lastInterruptMillis = 0;
-    DEBUG5_PRINTLN("meterISRGroup1()");
     volatile unsigned long interruptMillis = millis();
+    DEBUG5_PRINTLN("meterISRGroup1()");
     if (interruptMillis - lastInterruptMillis > FLOWMETER_DEBOUNCE_INVERVAL_MS)
     {
         flowMeterGroup1.increment();
@@ -96,6 +98,7 @@ void visualInit() {
     }
     DEBUG3_PRINTLN("Delay...");
     delay(1000);
+
     // turn off first 4 leds on group 1
     for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
         if (i != CONTINUOUS_BREW_OPTION_INDEX) {
@@ -114,6 +117,7 @@ void visualInit() {
     }
     DEBUG3_PRINTLN("Delay...");
     delay(1000);
+
     // turn off first 4 leds on group 2
     for (int8_t i = 0; i < BREW_OPTIONS_LEN; i++) {
         if (i != CONTINUOUS_BREW_OPTION_INDEX) {
@@ -123,7 +127,7 @@ void visualInit() {
     }
     DEBUG3_PRINTLN("Delay...");
     delay(800);
-    
+
     // turn off 5th led both groups
     pinMode(GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX], INPUT_PULLUP);
     DEBUG3_VALUELN("Pin mode INPUT_PULLUP on pin: ", GROUP1_PINS[CONTINUOUS_BREW_OPTION_INDEX]);
@@ -152,7 +156,7 @@ void setup()
     pinMode(13, INPUT);
 
 	// Initialize a serial connection for reporting values to the host
-    #ifdef DEBUG_LEVEL
+    #if DEBUG_LEVEL > DEBUG_NONE
         Serial.begin(9600);
         while (!Serial);
     #endif

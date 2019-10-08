@@ -19,9 +19,6 @@ const int16_t MILLIS_TO_ENTER_PROGRAM_MODE = 7000;
 
 const unsigned long LEDS_BLINK_INTERVAL = 800;                      //!< interval at which to blink leds on programming mode (milliseconds)
 
-const bool DELAY_AFTER_ON = true;
-const bool DONT_DELAY_AFTER_ON = false;
-
 const long MIN_FLOWMETER_PULSE_CONFIG = 40;                                   //!< min valeu allowed to set for flowmeter pulse config (count)
 const unsigned long MIN_DOSE_DURATION_CONFIG = 10 * 1000;                     //!< min valeu allowed to set for duration config (ms)
 
